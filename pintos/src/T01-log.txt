@@ -1,0 +1,17 @@
+[07-08-18 18:00-22:00] Basic Setup
+Members present : Pavan Kiran Divya Muskan Neha
+
+[10-08-18 08:00-12:00] Reading about timers and ticks
+Members present : Pavan Kiran Divya Muskan Neha
+
+[11-08-18 17:30-21:30] Done T01 Task 1 added 18 lines and deleted 2 lines.
+Members present : Kiran Divya Muskan Neha
+
+[14-08-18 18:00-22:00] Done T01 Task 2 added 22 lines and modified 5 lines.
+Members present : Pavan Kiran Muskan Divya Neha
+
+[15-08-18 09:00-14:00] Done T01 Task 3 added 25 lines
+Members present : Pavan Kiran Divya Neha
+
+[16-08-18 10:00-23:30] Rechecked (19/27 test cases failing) and Committed to CVS
+Members present : Pavan Divya Muskan Neha
