@@ -67,6 +67,9 @@ bool thread_mlfqs;
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
+
+static void managerial_thread_work (void *aux UNUSED);          /* the function which is called when managerial thread is running. */
+
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
@@ -75,6 +78,9 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+static int e_next_wakeup;             /*Earliest wakeup time among all sleeping threads*/
+static struct thread *managerial_thread;     /* managerial thread which manages the waking up of sleeping threads.*/
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -169,12 +175,16 @@ thread_tick (void)
   else
     kernel_ticks++;
 
+  /* If it is time to wake up any thread, managerial thread is unblocked. */
+  if(timer_ticks() == e_next_wakeup)
+    thread_unblock(managerial_thread);
+
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
   
   // check if any sleeping thread has to wake up
-  thread_wakeup (timer_ticks());
+  // thread_wakeup (timer_ticks());
 }
 
 /* Prints thread statistics. */
@@ -637,38 +647,47 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-void thread_set_temporarily_up()
+/* Store the original priority of the thread and set it's priority to max temporarily till it wakes up */
+void thread_set_temporarily_up(void)
 {
-	thread_current()->orig_priority=thread_current()->priority;
+	thread_current()->orig_priority = thread_current()->priority;    /* store the original priority of the thread before setting it to max temporaroly*/
 	thread_current()->priority=PRI_MAX;
 }
-void thread_restore()
+
+/* Restores the original priority of the thread which just wakes up from sleep*/
+void thread_restore(void)
 {
-	thread_current()->priority=thread_current()->orig_priority;
+	thread_current()->priority = thread_current()->orig_priority;
 }
-void thread_sleep(int64_t wakeup_at, int current_time)
+
+/* making the current thread go to sleep and updating it's wakeup time*/
+void thread_sleep(int64_t wakeup_at, int currentTime)
 {
   // disabling the interrupts
-	enum intr_level old_int = intr_disable();
+	enum intr_level old_int=intr_disable();
   struct thread *th = thread_current();
 
   /* if the current time is greater than the time when it is supposed to wake up, then it doesn't have to sleep. */
-  if(current_time > wakeup_at) return;
+  if(currentTime >= wakeup_at) return;
 	
   ASSERT(th->status == THREAD_RUNNING); 
 	th->wakeup_at = wakeup_at;       // setting the wakeup time of the thread.
-	list_insert_ordered(&sleeping_list, &(th->elem), before, NULL);   // insert it to the sleeper list
+	list_insert_ordered(&sleeper_list, &(th->elem), before, NULL);   // insert it to the sleeper list
+
+  if(!list_empty(&sleeper_list))e_next_wakeup = list_entry(list_begin(&sleeper_list),struct thread,elem)->wakeup_at;
+	
 	thread_block();	
   //enabling the interrupts
 	intr_set_level(old_int);
 }	
 
-void set_next_wakeup()
+void 
+set_next_wakeup(void)
 {
-  if(!list_empty(&sleeping_list)) // sleeper list is not empty
+  if(!list_empty(&sleeping_list)) // sleeping_list is not empty
   {
     struct thread * th = thread_current(); // current running thread
-    struct thread * th2 = list_entry(list_begin(&sleeping_list),struct thread,elem); // thread corresponding to the head of the sleeper list
+    struct thread * th2 = list_entry(list_begin(&sleeping_list),struct thread,elem); // thread corresponding to the head of the sleeping_list
 
     if(th2->wakeup_at <= th->wakeup_at)
     {
@@ -790,4 +809,38 @@ thread_add_lock (struct lock *lock)
   else lock->priority = 0;
 
   intr_set_level (old_level);
+}
+
+/* the function which runs when the managerial thread is in running state.
+  All the sleeping threads which need to be waked up are unblocked. */
+static void
+managerial_thread_work (void *AUX UNUSED) 
+{
+  managerial_thread = thread_current ();
+  
+  while(true)
+  {
+    enum intr_level old_level = intr_disable();
+ 
+    /* if threads needs to be waked up, ublock them iteratively. */
+    while(!list_empty(&sleeper_list))
+    {
+      struct thread * th2 = list_entry(list_begin(&sleeper_list),struct thread,elem);
+      if(e_next_wakeup >= th2->wakeup_at)
+      {
+        list_pop_front(&sleeper_list);
+        thread_unblock(th2);
+      }
+      else
+        break;
+    }
+    
+    /* If any thread is still sleeping, update the next wake up time. */
+    if(!list_empty(&sleeper_list))
+      e_next_wakeup = list_entry(list_begin(&sleeper_list),struct thread,elem)->wakeup_at;
+
+    thread_block();               /* Block the managerial thread. */
+    
+    intr_set_level(old_level);   
+  }
 }
