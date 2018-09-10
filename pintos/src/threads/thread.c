@@ -138,6 +138,9 @@ thread_start (void)
 
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
+
+  e_next_wakeup=-100;
+  thread_create("managerial_thread", PRI_MAX, managerial_thread_work, NULL);      /* Managerial thread is created in the starting when the thread_start is called*/
 }
 
 /* Waking up of all need to be woken up processes at that time. */
