@@ -92,7 +92,7 @@ sema_down (struct semaphore *sema)
 
    This function may be called from an interrupt handler. */
 bool
-sema_try_down (struct semaphore *sema) 
+sema_try_down (struct semaphore *sema)   /*no need to go to waiting list of semaphore*/
 {
   enum intr_level old_level;
   bool success;
@@ -247,7 +247,7 @@ lock_acquire (struct lock *lock)
   
   t->lock_seeking = NULL;         
 
-  thread_add_lock (lock);                       /* add to thread's locks acquired and change lock's priority*/
+  if(!thread_mlfqs) thread_add_lock (lock);                       /* add to thread's locks acquired and change lock's priority*/
 
   lock->holder = t;
   intr_set_level (old_level);
@@ -289,7 +289,7 @@ lock_release (struct lock *lock)
 
   old_level = intr_disable ();
 
-  thread_remove_lock (lock);
+  if(!thread_mlfqs) thread_remove_lock (lock);
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
