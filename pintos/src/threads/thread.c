@@ -145,7 +145,7 @@ thread_start (void)
 void
 thread_wakeup (int64_t current_tick)
 {
-  if(!list_empty(&sleeping_list)) // if sleeper list is not empty
+  if(!list_empty(&sleeping_list)) // if sleeping list is not empty
   {
     struct thread * th = list_entry(list_begin(&sleeping_list), struct thread, elem); // thread to wake up
     if(th->wakeup_at <= current_tick)       /* if it had to wake up some time earlier, or right now then wake it up */
@@ -672,9 +672,9 @@ void thread_sleep(int64_t wakeup_at, int currentTime)
 	
   ASSERT(th->status == THREAD_RUNNING); 
 	th->wakeup_at = wakeup_at;       // setting the wakeup time of the thread.
-	list_insert_ordered(&sleeper_list, &(th->elem), before, NULL);   // insert it to the sleeper list
+	list_insert_ordered(&sleeping_list, &(th->elem), before, NULL);   // insert it to the sleeping list
 
-  if(!list_empty(&sleeper_list))e_next_wakeup = list_entry(list_begin(&sleeper_list),struct thread,elem)->wakeup_at;
+  if(!list_empty(&sleeping_list))e_next_wakeup = list_entry(list_begin(&sleeping_list),struct thread,elem)->wakeup_at;
 	
 	thread_block();	
   //enabling the interrupts
@@ -823,12 +823,12 @@ managerial_thread_work (void *AUX UNUSED)
     enum intr_level old_level = intr_disable();
  
     /* if threads needs to be waked up, ublock them iteratively. */
-    while(!list_empty(&sleeper_list))
+    while(!list_empty(&sleeping_list))
     {
-      struct thread * th2 = list_entry(list_begin(&sleeper_list),struct thread,elem);
+      struct thread * th2 = list_entry(list_begin(&sleeping_list),struct thread,elem);
       if(e_next_wakeup >= th2->wakeup_at)
       {
-        list_pop_front(&sleeper_list);
+        list_pop_front(&sleeping_list);
         thread_unblock(th2);
       }
       else
@@ -836,8 +836,8 @@ managerial_thread_work (void *AUX UNUSED)
     }
     
     /* If any thread is still sleeping, update the next wake up time. */
-    if(!list_empty(&sleeper_list))
-      e_next_wakeup = list_entry(list_begin(&sleeper_list),struct thread,elem)->wakeup_at;
+    if(!list_empty(&sleeping_list))
+      e_next_wakeup = list_entry(list_begin(&sleeping_list),struct thread,elem)->wakeup_at;
 
     thread_block();               /* Block the managerial thread. */
     
