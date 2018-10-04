@@ -21,6 +21,19 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+void test_stack(int *t)
+{ 
+  int i;
+  int argc = t[1];
+  char ** argv;
+  argv = (char **) t[2];
+  printf("ARGC:%d ARGV:%x\n", argc, (unsigned int)argv);
+  for (i = 0; i < argc; i++)
+  printf("Argv[%d] = %x pointing at %s\n",
+  i, (unsigned int)argv[i], argv[i]);
+}
+
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -38,8 +51,11 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  char *save_ptr;
+  file_name = strtok_r (file_name," ",&save_ptr);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_MAX, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -195,7 +211,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, char * cmdline);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -222,7 +238,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  char * fn_cp = malloc (strlen(file_name)+1);
+  strlcpy(fn_cp, file_name, strlen(file_name)+1);
+  
+  char * save_ptr;
+  fn_cp = strtok_r(fn_cp," ",&save_ptr);
+
+  file = filesys_open (fn_cp);
+  //TODO : Free fn_cp
+  
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -302,8 +326,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, file_name))
     goto done;
+
+  test_stack(*esp);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -427,7 +453,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char * file_name) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -437,7 +463,61 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE - 12;
+      {
+          *esp = PHYS_BASE;
+          
+          char *token, *save_ptr;
+          int argc = 0,i;
+
+          char * copy = malloc(strlen(file_name)+1);
+          strlcpy (copy, file_name, strlen(file_name)+1);
+
+
+          for (token = strtok_r (copy, " ", &save_ptr); token != NULL;
+            token = strtok_r (NULL, " ", &save_ptr))
+            argc++;
+
+
+          int *argv = calloc(argc,sizeof(int));
+
+          for (token = strtok_r (file_name, " ", &save_ptr),i=0; token != NULL;
+            token = strtok_r (NULL, " ", &save_ptr),i++)
+            {
+              *esp -= strlen(token) + 1;
+              memcpy(*esp,token,strlen(token) + 1);
+
+              argv[i]=*esp;
+            }
+
+          while((int)*esp%4!=0)
+          {
+            *esp-=sizeof(char);
+            char x = 0;
+            memcpy(*esp,&x,sizeof(char));
+          }
+
+          int zero = 0;
+
+          *esp-=sizeof(int);
+          memcpy(*esp,&zero,sizeof(int));
+
+          for(i=argc-1;i>=0;i--)
+          {
+            *esp-=sizeof(int);
+            memcpy(*esp,&argv[i],sizeof(int));
+          }
+
+          int pt = *esp;
+          *esp-=sizeof(int);
+          memcpy(*esp,&pt,sizeof(int));
+
+          *esp-=sizeof(int);
+          memcpy(*esp,&argc,sizeof(int));
+
+          *esp-=sizeof(int);
+          memcpy(*esp,&zero,sizeof(int));
+
+      }
       else
         palloc_free_page (kpage);
     }
