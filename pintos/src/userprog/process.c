@@ -21,18 +21,6 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-void test_stack(int *t)
-{ 
-  int i;
-  int argc = t[1];
-  char ** argv;
-  argv = (char **) t[2];
-  printf("ARGC:%d ARGV:%x\n", argc, (unsigned int)argv);
-  for (i = 0; i < argc; i++)
-  printf("Argv[%d] = %x pointing at %s\n",
-  i, (unsigned int)argv[i], argv[i]);
-}
-
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -55,9 +43,10 @@ process_execute (const char *file_name)
   file_name = strtok_r (file_name," ",&save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_MAX, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+
   return tid;
 }
 
@@ -104,6 +93,13 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  int i;
+  // 
+  //thread_yield();
+  for (i = 0; i < (1<<10); ++i)
+  {
+    thread_yield();
+  }
   return -1;
 }
 
@@ -113,6 +109,20 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  printf ("%s: exit(%d)\n", cur->name, cur->ret_status);
+  while (!list_empty (&cur->wait.waiters))
+    sema_up (&cur->wait);
+  file_close (cur->self);
+  cur->self = NULL;
+  cur->exited = true;
+  if (cur->parent)
+    {
+      intr_disable ();
+      thread_block ();
+      intr_enable ();
+    }
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -326,10 +336,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp, file_name))
+  if (!setup_stack (esp,file_name))
     goto done;
-
-  test_stack(*esp);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
